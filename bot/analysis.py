@@ -60,6 +60,21 @@ def _structure(candles: list[Candle], window: int = 5):
     return highs, lows, bull_bos, bear_bos
 
 
+def dow_theory(highs, lows):
+    """Classify the latest confirmed swing structure using Dow Theory."""
+    if len(highs) < 2 or len(lows) < 2:
+        return "NEUTRAL", "スイング不足"
+    higher_high = highs[-1][1] > highs[-2][1]
+    higher_low = lows[-1][1] > lows[-2][1]
+    lower_high = highs[-1][1] < highs[-2][1]
+    lower_low = lows[-1][1] < lows[-2][1]
+    if higher_high and higher_low:
+        return "BULLISH", "HH・HL（高値・安値切り上げ）"
+    if lower_high and lower_low:
+        return "BEARISH", "LH・LL（高値・安値切り下げ）"
+    return "RANGE", "高値・安値の方向が不一致"
+
+
 def _order_block(candles: list[Candle], bull_bos: bool, bear_bos: bool):
     recent = candles[-20:-1]
     if bull_bos:
@@ -89,6 +104,7 @@ def analyze_timeframe(candles: list[Candle], timeframe: str) -> TimeframeAnalysi
     middle = mean(window); sd = pstdev(window)
     upper, lower = middle + 2 * sd, middle - 2 * sd
     highs, lows, bull_bos, bear_bos = _structure(candles)
+    dow_trend, dow_label = dow_theory(highs, lows)
     fvg = _last_fvg(candles)
     ob = _order_block(candles, bull_bos, bear_bos)
 
@@ -108,6 +124,9 @@ def analyze_timeframe(candles: list[Candle], timeframe: str) -> TimeframeAnalysi
     if price <= lower: warnings.append("ボリンジャー下限付近")
     if bull_bos: score += 16; reasons.append("直近スイング高値を終値で突破（強気BOS）")
     if bear_bos: score -= 16; reasons.append("直近スイング安値を終値で突破（弱気BOS）")
+    if dow_trend == "BULLISH": score += 10; reasons.append(f"ダウ理論: {dow_label}")
+    elif dow_trend == "BEARISH": score -= 10; reasons.append(f"ダウ理論: {dow_label}")
+    else: warnings.append(f"ダウ理論: {dow_label}")
     if fvg:
         side, low, high, _ = fvg
         distance = 0 if low <= price <= high else min(abs(price-low), abs(price-high))
@@ -139,7 +158,10 @@ def analyze_timeframe(candles: list[Candle], timeframe: str) -> TimeframeAnalysi
         metrics={"price": price, "ema20": e20[-1], "ema75": e75[-1], "ema200": e200[-1],
                  "rsi": r[-1], "macd": macd[-1], "macd_signal": signal[-1], "bb_upper": upper,
                  "bb_middle": middle, "bb_lower": lower, "atr": unit, "volume_ratio": volume_ratio,
-                 "recent_high": recent_high, "recent_low": recent_low},
+                 "recent_high": recent_high, "recent_low": recent_low, "dow_trend": dow_trend,
+                 "dow_label": dow_label,
+                 "last_swing_high": highs[-1][1] if highs else recent_high,
+                 "last_swing_low": lows[-1][1] if lows else recent_low},
     )
 
 

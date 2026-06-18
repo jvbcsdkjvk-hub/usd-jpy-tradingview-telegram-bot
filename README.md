@@ -34,4 +34,6 @@ TradingViewのチャート用接続は公式の安定APIではないため、Tra
 
 `.github/workflows/telegram-signal.yml` は30分ごとに分析します。5分足を65%、1時間足を35%として必ず買いか売りを選び、現在価格・エントリー目安・利確・損切りをTelegramへ送ります。優勢側が60%未満なら「判断は弱め」と明記します。GitHubのRepository secretsへ `TELEGRAM_BOT_TOKEN` と `TELEGRAM_CHAT_ID` の登録が必要です。
 
+ダウ理論は直近の確定スイング高値・安値を比較し、HH・HL（上昇）、LH・LL（下降）、方向不一致（レンジ）を5分足と1時間足で判定します。通知のエントリー条件、無効化水準、戻り売り／買い戻し警戒水準にもスイング構造を使用します。
+
 Windowsでは `outputs/Telegram設定.bat` を使うと、Telegram Botの確認、Chat ID取得、GitHub Secrets登録、テスト通知、ワークフロー有効化をまとめて行えます。トークンは画面に表示されず、リポジトリへ保存されません。

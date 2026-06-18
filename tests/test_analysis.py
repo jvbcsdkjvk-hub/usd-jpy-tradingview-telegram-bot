@@ -1,7 +1,7 @@
 import math
 import unittest
 
-from bot.analysis import analyze_timeframe, combine, ema
+from bot.analysis import analyze_timeframe, combine, dow_theory, ema
 from bot.models import Candle
 
 
@@ -17,6 +17,10 @@ class AnalysisTests(unittest.TestCase):
     def test_ema(self):
         self.assertEqual(len(ema([1,2,3], 2)), 3)
         self.assertGreater(ema([1,2,3], 2)[-1], 2)
+
+    def test_dow_theory_structure(self):
+        self.assertEqual(dow_theory([(1,100),(2,110)],[(1,90),(2,95)])[0],"BULLISH")
+        self.assertEqual(dow_theory([(1,110),(2,100)],[(1,95),(2,90)])[0],"BEARISH")
 
     def test_trending_markets(self):
         up=analyze_timeframe(candles(1), "5m")

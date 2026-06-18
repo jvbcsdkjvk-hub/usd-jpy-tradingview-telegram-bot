@@ -7,7 +7,9 @@ from bot.models import TimeframeAnalysis
 
 def analysis(tf, score, price=150.0, atr=0.2):
     return TimeframeAnalysis(tf, score, "LONG" if score >= 0 else "SHORT", abs(score),
-                             metrics={"price": price, "atr": atr})
+                             metrics={"price": price, "atr": atr, "ema20":149.95,
+                                      "last_swing_high":150.2,"last_swing_low":149.8,
+                                      "dow_label":"HH・HL（高値・安値切り上げ）"})
 
 
 class TelegramSignalTests(unittest.TestCase):
@@ -38,10 +40,12 @@ class TelegramSignalTests(unittest.TestCase):
                  "signal_confidence":55.0,"weak":True,"entry_price":150.0,
                  "take_profit_price":149.4,"stop_price":150.3}
         message=telegram_signal.telegram_message(summary,{"5m":analysis("5m",-10),"1h":analysis("1h",0)})
-        self.assertIn("判断は弱め",message)
+        self.assertIn("弱い売り。即エントリー非推奨",message)
         self.assertIn("現在価格",message)
         self.assertIn("利確",message)
         self.assertIn("損切り",message)
+        self.assertIn("ダウ理論",message)
+        self.assertIn("下抜け確定後",message)
 
 
 if __name__ == "__main__": unittest.main()

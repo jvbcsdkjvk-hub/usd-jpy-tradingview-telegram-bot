@@ -32,25 +32,65 @@ def telegram_message(summary, analyses):
     direction = summary["decision"]
     confidence = summary["long_percent"] if direction == "LONG" else summary["short_percent"]
     icon = "🟢" if direction == "LONG" else "🔴"
-    side = "買い" if direction == "LONG" else "売り"
-    strength = "⚠️ 判断は弱めです" if summary["weak"] else "判断強度は通常以上です"
-    tf_lines = "\n".join(
-        f"• {html.escape(tf)}: {item.direction} ({item.score:+.1f})"
-        for tf, item in analyses.items()
-    )
+    side = "買い寄り" if direction == "LONG" else "売り寄り"
+    strength = "弱め" if summary["weak"] else "通常以上"
+    verdict = f"弱い{'買い' if direction == 'LONG' else '売り'}。即エントリー非推奨。" if summary["weak"] else f"{'買い' if direction == 'LONG' else '売り'}優勢。条件成立後のエントリーを検討。"
+    plan = trade_plan(summary, analyses)
+    h1 = analyses["1h"]; m5 = analyses["5m"]
+    h1_side = "LONG" if h1.score >= 0 else "SHORT"
+    m5_side = "LONG" if m5.score >= 0 else "SHORT"
+    adjustment = "で短期調整中" if h1_side != m5_side else "で方向一致"
     return (
-        f"{icon} <b>USD/JPY 短期目線：{side} ({direction})</b>\n\n"
+        f"{icon} <b>USD/JPY 短期目線：{side}（{strength}）</b>\n"
         f"LONG {summary['long_percent']:.1f}% / SHORT {summary['short_percent']:.1f}%\n"
-        f"優勢度: <b>{confidence:.1f}%</b>\n"
-        f"{strength}\n\n"
-        f"現在価格: <code>{summary['entry_price']:.3f}</code>\n"
-        f"エントリー目安: <code>{summary['entry_price']:.3f}</code>\n"
-        f"利確: <code>{summary['take_profit_price']:.3f}</code>\n"
-        f"損切り: <code>{summary['stop_price']:.3f}</code>\n"
-        f"RR: 1:2\n\n"
-        f"<b>時間足</b>\n{tf_lines}\n\n"
+        f"優勢度：<b>{confidence:.1f}%</b>\n"
+        f"判定：{verdict}\n\n"
+        f"現在価格：<code>{summary['entry_price']:.3f}</code>\n"
+        f"エントリー目安：{plan['entry']}\n"
+        f"利確候補：<code>{summary['take_profit_price']:.3f}</code>（ATR {plan['tp_atr']:.1f}倍先）\n"
+        f"損切り：<code>{summary['stop_price']:.3f}</code>（5分足ATR×1.5）\n\n"
+        f"<b>根拠：</b>\n"
+        f"・1hは{h1_side}／ダウ理論：{html.escape(h1.metrics['dow_label'])}\n"
+        f"・5mは{m5_side}{adjustment}／ダウ理論：{html.escape(m5.metrics['dow_label'])}\n"
+        f"・RR 1:2\n"
+        f"・{plan['timing']}\n\n"
+        f"<b>警戒：</b>\n"
+        f"・{plan['chase_warning']}\n"
+        f"・{plan['invalidation']}\n"
+        f"・{plan['opposition']}\n\n"
         "分析支援用の参考シグナルです。"
     )
+
+
+def trade_plan(summary, analyses):
+    m5 = analyses["5m"]
+    h1 = analyses["1h"]
+    price = summary["entry_price"]
+    atr = m5.metrics["atr"]
+    tp_atr = abs(summary["take_profit_price"] - price) / atr if atr else 0
+    m5_high = m5.metrics["last_swing_high"]
+    m5_low = m5.metrics["last_swing_low"]
+    h1_high = h1.metrics["last_swing_high"]
+    h1_low = h1.metrics["last_swing_low"]
+    ema20 = m5.metrics["ema20"]
+    m5_side = "LONG" if m5.score >= 0 else "SHORT"
+    if summary["decision"] == "LONG":
+        return {
+            "entry": f"5m高値 {m5_high:.3f} の上抜け確定後、またはEMA20 {ema20:.3f}付近への押し目を検討",
+            "tp_atr": tp_atr,
+            "timing": "5mの上昇転換待ち" if m5_side == "SHORT" else "高値更新後の押し目待ち",
+            "chase_warning": "5mがSHORTのため飛び乗り注意" if m5_side == "SHORT" else "高値追いの飛び乗り注意",
+            "invalidation": f"5m直近安値 {m5_low:.3f} 割れなら買いは見送り",
+            "opposition": f"1h直近高値 {h1_high:.3f} 付近の売り戻しに注意",
+        }
+    return {
+        "entry": f"5m安値 {m5_low:.3f} の下抜け確定後、またはEMA20 {ema20:.3f}付近への戻りを検討",
+        "tp_atr": tp_atr,
+        "timing": "5mの下降転換待ち" if m5_side == "LONG" else "安値更新後の戻り待ち",
+        "chase_warning": "5mがLONGのため飛び乗り注意" if m5_side == "LONG" else "安値追いの飛び乗り注意",
+        "invalidation": f"5m直近高値 {m5_high:.3f} 超えなら売りは見送り",
+        "opposition": f"1h直近安値 {h1_low:.3f} 付近の買い戻しに注意",
+    }
 
 
 def send_telegram(token, chat_id, message):
