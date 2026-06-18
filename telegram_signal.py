@@ -4,7 +4,6 @@ from __future__ import annotations
 import html
 import json
 import os
-import time
 import urllib.parse
 import urllib.request
 from pathlib import Path
@@ -14,56 +13,38 @@ from bot.tradingview import fetch_candles
 
 
 ROOT = Path(__file__).resolve().parent
-STATE_PATH = ROOT / ".bot-state.json"
-
-
 def load_config():
     return json.loads((ROOT / "config.json").read_text(encoding="utf-8"))
 
 
 def analyze(config):
     analyses = {}
-    for timeframe, settings in config["timeframes"].items():
-        if not settings.get("enabled", True):
-            continue
+    weights = config["telegram_short_term"]["weights"]
+    for timeframe in weights:
         candles = fetch_candles(config["symbol"], timeframe, config["history_bars"])
         analyses[timeframe] = analyze_timeframe(candles, timeframe)
-    weights = {tf: settings["weight"] for tf, settings in config["timeframes"].items()}
-    return combine(analyses, weights, float(config["signal_threshold"])), analyses
-
-
-def read_state():
-    try:
-        return json.loads(STATE_PATH.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return {"direction": None, "notified_at": 0}
-
-
-def save_state(direction, timestamp):
-    STATE_PATH.write_text(json.dumps({"direction": direction, "notified_at": timestamp}), encoding="utf-8")
-
-
-def should_notify(summary, config, now):
-    if summary["decision"] == "WAIT":
-        return False
-    previous = read_state()
-    cooldown = int(config["cooldown_minutes"]) * 60
-    return previous.get("direction") != summary["decision"] or now - previous.get("notified_at", 0) >= cooldown
+    summary = combine(analyses, weights, 50)
+    summary["weak"] = summary["signal_confidence"] < float(config["telegram_short_term"]["weak_threshold"])
+    return summary, analyses
 
 
 def telegram_message(summary, analyses):
     direction = summary["decision"]
     confidence = summary["long_percent"] if direction == "LONG" else summary["short_percent"]
     icon = "🟢" if direction == "LONG" else "🔴"
+    side = "買い" if direction == "LONG" else "売り"
+    strength = "⚠️ 判断は弱めです" if summary["weak"] else "判断強度は通常以上です"
     tf_lines = "\n".join(
         f"• {html.escape(tf)}: {item.direction} ({item.score:+.1f})"
         for tf, item in analyses.items()
     )
     return (
-        f"{icon} <b>USD/JPY {direction}候補</b>\n\n"
+        f"{icon} <b>USD/JPY 短期目線：{side} ({direction})</b>\n\n"
         f"LONG {summary['long_percent']:.1f}% / SHORT {summary['short_percent']:.1f}%\n"
-        f"判定確度: <b>{confidence:.1f}%</b>\n\n"
-        f"エントリー: <code>{summary['entry_price']:.3f}</code>\n"
+        f"優勢度: <b>{confidence:.1f}%</b>\n"
+        f"{strength}\n\n"
+        f"現在価格: <code>{summary['entry_price']:.3f}</code>\n"
+        f"エントリー目安: <code>{summary['entry_price']:.3f}</code>\n"
         f"利確: <code>{summary['take_profit_price']:.3f}</code>\n"
         f"損切り: <code>{summary['stop_price']:.3f}</code>\n"
         f"RR: 1:2\n\n"
@@ -89,15 +70,9 @@ def main():
     config = load_config()
     summary, analyses = analyze(config)
     print(json.dumps(summary, ensure_ascii=False))
-    now = int(time.time())
-    if should_notify(summary, config, now):
-        send_telegram(token, chat_id, telegram_message(summary, analyses))
-        save_state(summary["decision"], now)
-        print("Telegram notification sent")
-    else:
-        print("No notification: WAIT or cooldown active")
+    send_telegram(token, chat_id, telegram_message(summary, analyses))
+    print("30-minute Telegram report sent")
 
 
 if __name__ == "__main__":
     main()
-

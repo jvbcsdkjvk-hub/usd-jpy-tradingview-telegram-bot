@@ -1,35 +1,47 @@
-import tempfile
 import unittest
-from pathlib import Path
 from unittest.mock import patch
 
 import telegram_signal
+from bot.models import TimeframeAnalysis
+
+
+def analysis(tf, score, price=150.0, atr=0.2):
+    return TimeframeAnalysis(tf, score, "LONG" if score >= 0 else "SHORT", abs(score),
+                             metrics={"price": price, "atr": atr})
 
 
 class TelegramSignalTests(unittest.TestCase):
-    def setUp(self):
-        self.temp = tempfile.TemporaryDirectory()
-        self.state = Path(self.temp.name) / "state.json"
-        self.config = {"cooldown_minutes": 30}
+    def test_five_minute_has_sixty_five_percent_weight(self):
+        config={"symbol":"FOREXCOM:USDJPY","history_bars":500,
+                "telegram_short_term":{"weak_threshold":60,"weights":{"5m":.65,"1h":.35}}}
+        values={"5m":analysis("5m",80),"1h":analysis("1h",-20)}
+        with patch.object(telegram_signal,"fetch_candles",return_value=[object()]), \
+             patch.object(telegram_signal,"analyze_timeframe",side_effect=lambda candles,tf:values[tf]):
+            summary,_=telegram_signal.analyze(config)
+        self.assertEqual(summary["decision"],"LONG")
+        self.assertEqual(summary["long_percent"],72.5)
+        self.assertFalse(summary["weak"])
 
-    def tearDown(self):
-        self.temp.cleanup()
+    def test_weak_signal_still_chooses_direction(self):
+        config={"symbol":"FOREXCOM:USDJPY","history_bars":500,
+                "telegram_short_term":{"weak_threshold":60,"weights":{"5m":.65,"1h":.35}}}
+        values={"5m":analysis("5m",8),"1h":analysis("1h",-2)}
+        with patch.object(telegram_signal,"fetch_candles",return_value=[object()]), \
+             patch.object(telegram_signal,"analyze_timeframe",side_effect=lambda candles,tf:values[tf]):
+            summary,_=telegram_signal.analyze(config)
+        self.assertEqual(summary["decision"],"LONG")
+        self.assertTrue(summary["weak"])
+        self.assertIsNotNone(summary["entry_price"])
 
-    def test_wait_never_notifies(self):
-        self.assertFalse(telegram_signal.should_notify({"decision": "WAIT"}, self.config, 1000))
-
-    def test_same_direction_obeys_cooldown(self):
-        self.state.write_text('{"direction":"LONG","notified_at":1000}', encoding="utf-8")
-        with patch.object(telegram_signal, "STATE_PATH", self.state):
-            self.assertFalse(telegram_signal.should_notify({"decision": "LONG"}, self.config, 2000))
-            self.assertTrue(telegram_signal.should_notify({"decision": "LONG"}, self.config, 3000))
-
-    def test_direction_change_notifies_immediately(self):
-        self.state.write_text('{"direction":"LONG","notified_at":1000}', encoding="utf-8")
-        with patch.object(telegram_signal, "STATE_PATH", self.state):
-            self.assertTrue(telegram_signal.should_notify({"decision": "SHORT"}, self.config, 1100))
+    def test_message_contains_prices_and_weak_warning(self):
+        summary={"decision":"SHORT","long_percent":45.0,"short_percent":55.0,
+                 "signal_confidence":55.0,"weak":True,"entry_price":150.0,
+                 "take_profit_price":149.4,"stop_price":150.3}
+        message=telegram_signal.telegram_message(summary,{"5m":analysis("5m",-10),"1h":analysis("1h",0)})
+        self.assertIn("判断は弱め",message)
+        self.assertIn("現在価格",message)
+        self.assertIn("利確",message)
+        self.assertIn("損切り",message)
 
 
-if __name__ == "__main__":
-    unittest.main()
-
+if __name__ == "__main__": unittest.main()

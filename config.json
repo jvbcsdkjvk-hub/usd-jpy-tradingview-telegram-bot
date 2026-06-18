@@ -6,6 +6,10 @@
   "notify_threshold": 85,
   "cooldown_minutes": 30,
   "port": 8765,
+  "telegram_short_term": {
+    "weak_threshold": 60,
+    "weights": {"5m": 0.65, "1h": 0.35}
+  },
   "timeframes": {
     "5m": {"enabled": true, "weight": 0.40},
     "1h": {"enabled": true, "weight": 0.35},
