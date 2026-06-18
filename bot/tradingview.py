@@ -21,7 +21,7 @@ class TradingViewError(RuntimeError):
     pass
 
 
-TV_INTERVALS = {"5m": "5", "1h": "60", "4h": "240", "1d": "1D"}
+TV_INTERVALS = {"5m": "5", "15m": "15", "1h": "60", "4h": "240", "1d": "1D"}
 
 
 def _session(prefix: str) -> str:

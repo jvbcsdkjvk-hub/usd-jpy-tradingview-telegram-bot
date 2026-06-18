@@ -8,10 +8,18 @@
   "port": 8765,
   "telegram_short_term": {
     "weak_threshold": 60,
-    "weights": {"5m": 0.65, "1h": 0.35}
+    "weights": {"1h": 0.40, "15m": 0.35, "5m": 0.25}
+  },
+  "economic_calendar": {
+    "url": "https://nfs.faireconomy.media/ff_calendar_thisweek.json",
+    "currencies": ["USD", "JPY"],
+    "impact": "High",
+    "minutes_before": 60,
+    "minutes_after": 30
   },
   "timeframes": {
     "5m": {"enabled": true, "weight": 0.40},
+    "15m": {"enabled": true, "weight": 0.00},
     "1h": {"enabled": true, "weight": 0.35},
     "4h": {"enabled": true, "weight": 0.15},
     "1d": {"enabled": true, "weight": 0.10}

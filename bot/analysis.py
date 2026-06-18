@@ -36,16 +36,32 @@ def atr(candles: list[Candle], period: int = 14) -> list[float]:
     return ema(tr, period)
 
 
-def _last_fvg(candles: list[Candle], lookback: int = 60):
-    result = None
+def _fvg_zones(candles: list[Candle], lookback: int = 100):
+    zones = {"bull": None, "bear": None}
     start = max(2, len(candles) - lookback)
     for i in range(start, len(candles)):
         left, right = candles[i - 2], candles[i]
         if right.low > left.high:
-            result = ("bull", left.high, right.low, i)
+            low, high = left.high, right.low
+            future = candles[i + 1:]
+            prior = candles[max(0, i - 12):i]
+            after_bos = bool(prior and right.close > max(x.high for x in prior))
+            filled = any(x.low <= low for x in future)
+            touched = any(x.low <= high for x in future)
+            zones["bull"] = {"side": "bull", "low": low, "high": high, "index": i,
+                             "status": "filled" if filled else "touched" if touched else "untouched",
+                             "inside": low <= candles[-1].close <= high, "after_bos": after_bos}
         elif right.high < left.low:
-            result = ("bear", right.high, left.low, i)
-    return result
+            low, high = right.high, left.low
+            future = candles[i + 1:]
+            prior = candles[max(0, i - 12):i]
+            after_bos = bool(prior and right.close < min(x.low for x in prior))
+            filled = any(x.high >= high for x in future)
+            touched = any(x.high >= low for x in future)
+            zones["bear"] = {"side": "bear", "low": low, "high": high, "index": i,
+                             "status": "filled" if filled else "touched" if touched else "untouched",
+                             "inside": low <= candles[-1].close <= high, "after_bos": after_bos}
+    return zones
 
 
 def _structure(candles: list[Candle], window: int = 5):
@@ -105,7 +121,7 @@ def analyze_timeframe(candles: list[Candle], timeframe: str) -> TimeframeAnalysi
     upper, lower = middle + 2 * sd, middle - 2 * sd
     highs, lows, bull_bos, bear_bos = _structure(candles)
     dow_trend, dow_label = dow_theory(highs, lows)
-    fvg = _last_fvg(candles)
+    fvgs = _fvg_zones(candles)
     ob = _order_block(candles, bull_bos, bear_bos)
 
     score = 0.0; reasons = []; warnings = []
@@ -127,8 +143,9 @@ def analyze_timeframe(candles: list[Candle], timeframe: str) -> TimeframeAnalysi
     if dow_trend == "BULLISH": score += 10; reasons.append(f"ダウ理論: {dow_label}")
     elif dow_trend == "BEARISH": score -= 10; reasons.append(f"ダウ理論: {dow_label}")
     else: warnings.append(f"ダウ理論: {dow_label}")
-    if fvg:
-        side, low, high, _ = fvg
+    directional_fvg = fvgs["bull"] if score >= 0 else fvgs["bear"]
+    if directional_fvg:
+        side, low, high = directional_fvg["side"], directional_fvg["low"], directional_fvg["high"]
         distance = 0 if low <= price <= high else min(abs(price-low), abs(price-high))
         if distance <= unit * 1.5:
             score += 7 if side == "bull" else -7
@@ -152,16 +169,30 @@ def analyze_timeframe(candles: list[Candle], timeframe: str) -> TimeframeAnalysi
 
     score = max(-100.0, min(100.0, score))
     direction = "LONG" if score >= 20 else "SHORT" if score <= -20 else "WAIT"
+    last_high = highs[-1][1] if highs else recent_high
+    last_low = lows[-1][1] if lows else recent_low
+    bull_choch = dow_trend == "BEARISH" and price > last_high
+    bear_choch = dow_trend == "BULLISH" and price < last_low
+    range_window = candles[-50:]
+    range_high, range_low = max(x.high for x in range_window), min(x.low for x in range_window)
+    round_below = math.floor(price * 2) / 2
+    round_above = math.ceil(price * 2) / 2
     return TimeframeAnalysis(
         timeframe=timeframe, score=round(score, 1), direction=direction,
         confidence=round(abs(score), 1), reasons=reasons, warnings=warnings,
         metrics={"price": price, "ema20": e20[-1], "ema75": e75[-1], "ema200": e200[-1],
                  "rsi": r[-1], "macd": macd[-1], "macd_signal": signal[-1], "bb_upper": upper,
                  "bb_middle": middle, "bb_lower": lower, "atr": unit, "volume_ratio": volume_ratio,
-                 "recent_high": recent_high, "recent_low": recent_low, "dow_trend": dow_trend,
+                 "recent_high": recent_high, "recent_low": recent_low, "range_high": range_high,
+                 "range_low": range_low, "round_below": round_below, "round_above": round_above,
+                 "dow_trend": dow_trend,
                  "dow_label": dow_label,
-                 "last_swing_high": highs[-1][1] if highs else recent_high,
-                 "last_swing_low": lows[-1][1] if lows else recent_low},
+                 "last_swing_high": last_high, "last_swing_low": last_low,
+                 "bull_bos": bull_bos, "bear_bos": bear_bos,
+                 "bull_choch": bull_choch, "bear_choch": bear_choch,
+                 "ema20_slope": e20[-1] - e20[-4], "ema75_slope": e75[-1] - e75[-4],
+                 "ema200_slope": e200[-1] - e200[-4],
+                 "bull_fvg": fvgs["bull"], "bear_fvg": fvgs["bear"]},
     )
 
 
