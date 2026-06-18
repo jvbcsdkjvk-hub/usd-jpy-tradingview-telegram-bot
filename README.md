@@ -33,3 +33,5 @@ TradingViewのチャート用接続は公式の安定APIではないため、Tra
 ## PCを切ってTelegram通知を受ける
 
 `.github/workflows/telegram-signal.yml` をGitHub Actionsで動かすと、5分ごとに分析します。LONGまたはSHORTが85%以上になった場合だけTelegramへエントリー・利確・損切りを送り、同方向は30分のクールダウンを設けます。GitHubのRepository secretsへ `TELEGRAM_BOT_TOKEN` と `TELEGRAM_CHAT_ID` の登録が必要です。
+
+Windowsでは `outputs/Telegram設定.bat` を使うと、Telegram Botの確認、Chat ID取得、GitHub Secrets登録、テスト通知、ワークフロー有効化をまとめて行えます。トークンは画面に表示されず、リポジトリへ保存されません。
