@@ -1,0 +1,15 @@
+{
+  "symbol": "FOREXCOM:USDJPY",
+  "refresh_seconds": 60,
+  "history_bars": 500,
+  "signal_threshold": 85,
+  "notify_threshold": 85,
+  "cooldown_minutes": 30,
+  "port": 8765,
+  "timeframes": {
+    "5m": {"enabled": true, "weight": 0.40},
+    "1h": {"enabled": true, "weight": 0.35},
+    "4h": {"enabled": true, "weight": 0.15},
+    "1d": {"enabled": true, "weight": 0.10}
+  }
+}
