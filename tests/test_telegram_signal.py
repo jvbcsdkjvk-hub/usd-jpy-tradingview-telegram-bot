@@ -44,6 +44,7 @@ class TelegramSignalTests(unittest.TestCase):
         self.assertIn("現在価格",message)
         self.assertIn("利確",message)
         self.assertIn("損切り",message)
+        self.assertIn("やや遠め。値幅拡大を確認",message)
         self.assertIn("ダウ理論",message)
         self.assertIn("下抜け確定後",message)
 

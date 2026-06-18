@@ -47,7 +47,7 @@ def telegram_message(summary, analyses):
         f"判定：{verdict}\n\n"
         f"現在価格：<code>{summary['entry_price']:.3f}</code>\n"
         f"エントリー目安：{plan['entry']}\n"
-        f"利確候補：<code>{summary['take_profit_price']:.3f}</code>（ATR {plan['tp_atr']:.1f}倍先）\n"
+        f"利確候補：<code>{summary['take_profit_price']:.3f}</code>（ATR {plan['tp_atr']:.1f}倍先：{plan['tp_assessment']}）\n"
         f"損切り：<code>{summary['stop_price']:.3f}</code>（5分足ATR×1.5）\n\n"
         f"<b>根拠：</b>\n"
         f"・1hは{h1_side}／ダウ理論：{html.escape(h1.metrics['dow_label'])}\n"
@@ -68,6 +68,12 @@ def trade_plan(summary, analyses):
     price = summary["entry_price"]
     atr = m5.metrics["atr"]
     tp_atr = abs(summary["take_profit_price"] - price) / atr if atr else 0
+    if tp_atr <= 2:
+        tp_assessment = "平均値幅に対して無理の少ない範囲"
+    elif tp_atr <= 3.1:
+        tp_assessment = "やや遠め。値幅拡大を確認"
+    else:
+        tp_assessment = "遠い目標。分割利確を推奨"
     m5_high = m5.metrics["last_swing_high"]
     m5_low = m5.metrics["last_swing_low"]
     h1_high = h1.metrics["last_swing_high"]
@@ -78,6 +84,7 @@ def trade_plan(summary, analyses):
         return {
             "entry": f"5m高値 {m5_high:.3f} の上抜け確定後、またはEMA20 {ema20:.3f}付近への押し目を検討",
             "tp_atr": tp_atr,
+            "tp_assessment": tp_assessment,
             "timing": "5mの上昇転換待ち" if m5_side == "SHORT" else "高値更新後の押し目待ち",
             "chase_warning": "5mがSHORTのため飛び乗り注意" if m5_side == "SHORT" else "高値追いの飛び乗り注意",
             "invalidation": f"5m直近安値 {m5_low:.3f} 割れなら買いは見送り",
@@ -86,6 +93,7 @@ def trade_plan(summary, analyses):
     return {
         "entry": f"5m安値 {m5_low:.3f} の下抜け確定後、またはEMA20 {ema20:.3f}付近への戻りを検討",
         "tp_atr": tp_atr,
+        "tp_assessment": tp_assessment,
         "timing": "5mの下降転換待ち" if m5_side == "LONG" else "安値更新後の戻り待ち",
         "chase_warning": "5mがLONGのため飛び乗り注意" if m5_side == "LONG" else "安値追いの飛び乗り注意",
         "invalidation": f"5m直近高値 {m5_high:.3f} 超えなら売りは見送り",
