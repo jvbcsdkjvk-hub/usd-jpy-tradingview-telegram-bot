@@ -1,0 +1,11 @@
+{
+  "name": "usd-jpy-telegram-scheduler",
+  "private": true,
+  "scripts": {
+    "deploy:scheduler": "wrangler deploy",
+    "check:scheduler": "wrangler deploy --dry-run"
+  },
+  "devDependencies": {
+    "wrangler": "4.102.0"
+  }
+}

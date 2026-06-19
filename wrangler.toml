@@ -1,0 +1,12 @@
+name = "usd-jpy-github-scheduler"
+main = "cloudflare/worker.js"
+compatibility_date = "2026-06-19"
+workers_dev = false
+
+[triggers]
+crons = ["*/15 * * * *"]
+
+[vars]
+GITHUB_OWNER = "jvbcsdkjvk-hub"
+GITHUB_REPO = "usd-jpy-tradingview-telegram-bot"
+GITHUB_WORKFLOW = "telegram-signal.yml"
