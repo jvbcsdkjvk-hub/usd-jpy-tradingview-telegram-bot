@@ -32,7 +32,7 @@ TradingViewのチャート用接続は公式の安定APIではないため、Tra
 
 ## PCを切ってTelegram通知を受ける
 
-`.github/workflows/telegram-signal.yml` は15分ごとに分析します。1時間・15分・5分足から方向を判定し、現在価格・条件付きエントリー・利確・損切り・根拠・警戒・注目価格だけを簡潔にTelegramへ送ります。内部では100点評価を継続しますが、通知にはスコア内訳を表示しません。GitHubのRepository secretsへ `TELEGRAM_BOT_TOKEN` と `TELEGRAM_CHAT_ID` の登録が必要です。
+`.github/workflows/telegram-signal.yml` はGitHubの四半時混雑を避け、毎時02・17・32・47分に分析します。1時間・15分・5分足から方向を判定し、現在価格・条件付きエントリー・利確・損切り・根拠・警戒・注目価格だけを簡潔にTelegramへ送ります。内部では100点評価を継続しますが、通知にはスコア内訳を表示しません。GitHubのRepository secretsへ `TELEGRAM_BOT_TOKEN` と `TELEGRAM_CHAT_ID` の登録が必要です。
 
 ダウ理論は直近の確定スイング高値・安値を比較し、HH・HL（上昇）、LH・LL（下降）、方向不一致（レンジ）を5分足と1時間足で判定します。通知のエントリー条件、無効化水準、戻り売り／買い戻し警戒水準にもスイング構造を使用します。
 
