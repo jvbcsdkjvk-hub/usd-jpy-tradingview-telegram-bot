@@ -176,60 +176,39 @@ def telegram_message(summary, analyses, calendar=None):
         outlook = "押し目待ち" if direction == "LONG" else "戻り待ち"
     else:
         outlook = "買い寄り" if direction == "LONG" else "売り寄り"
-    if calendar["danger"]:
-        verdict = "重要指標時間帯のため新規エントリー見送り"
-    else:
-        verdict = summary["rating"]
     bos_key = "bull_bos" if direction == "LONG" else "bear_bos"
     choch_key = "bull_choch" if direction == "LONG" else "bear_choch"
     fvg = m5.metrics["bull_fvg" if direction == "LONG" else "bear_fvg"]
-    round_number = m5.metrics["round_above"] if direction == "LONG" else m5.metrics["round_below"]
-    breakdown = "\n".join(f"・{name}：{value[0]}/{value[1]}（{html.escape(value[2])}）" for name,value in summary["score_breakdown"].items())
     event_lines = _event_lines(calendar)
-    event_block = ("\n".join(event_lines) + "\n") if event_lines else ""
-    if calendar.get("error"): event_block += "⚠️ 経済指標カレンダー取得失敗。手動確認必須。\n"
     action_warning = "FVG反発確認待ち。" if plan["fvg_wait"] else "反発確認待ち。"
+    event_warning = (" / ".join(event_lines) + " / 新規エントリー見送り") if event_lines else "該当時間帯なし"
+    if calendar.get("error"): event_warning = "経済指標カレンダー取得失敗。手動確認必須"
+    ema_state = "順配列" if summary["score_breakdown"]["EMA"][0] >= 12 else "配列・傾きは弱い"
     return (
         f"{icon} <b>USD/JPY 短期目線：{outlook}</b>\n\n"
-        f"LONG {summary['long_percent']:.1f}% / SHORT {summary['short_percent']:.1f}%\n"
-        f"方向優勢度評価：{summary['bias_rating']}\n"
-        f"総合評価：<b>{summary['total_score']}点</b>\n"
-        f"判定：{verdict}。即エントリー非推奨。\n"
-        f"{event_block}\n"
-        f"現在価格：<code>{summary['entry_price']:.3f}</code>\n"
+        f"<b>現在価格：</b><code>{summary['entry_price']:.3f}</code>\n\n"
         f"<b>エントリー条件：</b>\n"
         f"・条件A：5m {'高値' if direction == 'LONG' else '安値'} <code>{plan['trigger']:.3f}</code> {'上' if direction == 'LONG' else '下'}抜けをローソク足確定で確認\n"
         f"・条件B：{plan['pullback']}\n"
         f"・共通：{action_warning}損切り位置確認必須\n\n"
-        f"利確候補：<code>{summary['take_profit_price']:.3f}</code>\n"
-        f"損切り：<code>{summary['stop_price']:.3f}</code>（5m ATR×1.5）\n"
-        f"RR：1:2\n\n"
+        f"<b>利確候補：</b><code>{summary['take_profit_price']:.3f}</code>（RR 1:2）\n"
+        f"<b>損切り：</b><code>{summary['stop_price']:.3f}</code>（5m ATR×1.5）\n\n"
         f"<b>根拠：</b>\n"
         f"・1h：{_bias(h1)} / {html.escape(h1.metrics['dow_label'])}\n"
         f"・15m：{_bias(m15)} / {html.escape(m15.metrics['dow_label'])}\n"
         f"・5m：{_bias(m5)} / {html.escape(m5.metrics['dow_label'])}\n"
-        f"・EMA：20 {m5.metrics['ema20']:.3f} / 75 {m5.metrics['ema75']:.3f} / 200 {m5.metrics['ema200']:.3f}\n"
-        f"・5m CHOCH：{'発生' if m5.metrics[choch_key] else '未発生'}\n"
-        f"・5m BOS：{'発生' if m5.metrics[bos_key] else '未発生'} / 1h BOS：{'発生' if h1.metrics[bos_key] else '未発生'}\n"
-        f"・5m転換価格：<code>{plan['trigger']:.3f}</code>\n"
-        f"・上昇FVG：{fvg_text(m5.metrics['bull_fvg'])}\n"
-        f"・下降FVG：{fvg_text(m5.metrics['bear_fvg'])}\n"
-        f"・ATR：{m5.metrics['atr']:.3f} / TPはATR {plan['tp_atr']:.1f}倍先\n\n"
-        f"<b>レジサポ：</b>\n"
-        f"・直近高値：<code>{m5.metrics['last_swing_high']:.3f}</code> / 直近安値：<code>{m5.metrics['last_swing_low']:.3f}</code>\n"
-        f"・レンジ上限：<code>{m5.metrics['range_high']:.3f}</code> / レンジ下限：<code>{m5.metrics['range_low']:.3f}</code>\n"
-        f"・ラウンドナンバー：<code>{round_number:.3f}</code>\n"
-        f"・{plan['resistance_note']}\n\n"
-        f"<b>スコア内訳：</b>\n{breakdown}\n\n"
+        f"・EMA：{ema_state}\n"
+        f"・5m CHOCH：{'発生' if m5.metrics[choch_key] else '未発生'} / BOS：{'発生' if m5.metrics[bos_key] else '未発生'}\n"
+        f"・FVG：{fvg_text(fvg)}\n\n"
         f"<b>警戒：</b>\n"
         f"・5mが逆方向なら飛び乗り注意\n"
         f"・直近{'安値' if direction == 'LONG' else '高値'} <code>{plan['invalidation']:.3f}</code> {'割れ' if direction == 'LONG' else '超え'}で見送り\n"
         f"・{plan['resistance_note']}\n"
-        f"・重要指標前60分〜発表後30分はロット低下ではなく新規見送り\n\n"
+        f"・重要指標：{event_warning}\n\n"
         f"<b>注目価格：</b>\n"
         f"・{'上' if direction == 'LONG' else '下'}抜けで伸びそう：<code>{plan['trigger']:.3f}</code>\n"
         f"・割れたら見送り：<code>{plan['invalidation']:.3f}</code>\n"
-        f"・押し戻り候補：EMA20〜EMA75\n"
+        f"・押し戻り候補：EMA20 <code>{m5.metrics['ema20']:.3f}</code>〜EMA75 <code>{m5.metrics['ema75']:.3f}</code>\n"
     )
 
 
@@ -250,7 +229,7 @@ def main():
     calendar = safe_fetch_calendar(config["economic_calendar"])
     print(json.dumps({"summary": summary, "calendar_error": calendar["error"]}, ensure_ascii=False, default=str))
     send_telegram(token, chat_id, telegram_message(summary, analyses, calendar))
-    print("30-minute environment report sent")
+    print("15-minute environment report sent")
 
 
 if __name__ == "__main__": main()

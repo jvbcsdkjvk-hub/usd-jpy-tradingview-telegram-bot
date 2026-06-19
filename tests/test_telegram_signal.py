@@ -59,9 +59,11 @@ class TelegramSignalTests(unittest.TestCase):
     def test_message_contains_required_environment_sections(self):
         items=analyses((1,1,-1)); summary=summary_for(items)
         message=telegram_signal.telegram_message(summary,items,{"danger":[],"upcoming":[],"error":None})
-        for text in ("総合評価","エントリー条件","15m","5m CHOCH","5m BOS","FVG",
-                     "方向優勢度評価","スコア内訳","ローソク足確定","反発確認待ち","注目価格"):
+        for text in ("現在価格","エントリー条件","利確候補","損切り","根拠","警戒",
+                     "15m","5m CHOCH","FVG","ローソク足確定","反発確認待ち","注目価格"):
             self.assertIn(text,message)
+        self.assertNotIn("スコア内訳",message)
+        self.assertNotIn("総合評価",message)
         self.assertLess(len(message),4096)
 
     def test_calendar_danger_forces_no_entry_wording(self):
@@ -69,7 +71,7 @@ class TelegramSignalTests(unittest.TestCase):
         danger={"danger":[{"currency":"USD","title":"CPI",
                  "time":datetime(2026,6,19,1,30,tzinfo=timezone.utc)}],"upcoming":[],"error":None}
         message=telegram_signal.telegram_message(summary,items,danger)
-        self.assertIn("重要指標時間帯のため新規エントリー見送り",message)
+        self.assertIn("USD CPI",message)
 
     def test_high_impact_calendar_window(self):
         payload=[{"title":"CPI","country":"USD","date":"2026-06-19T01:30:00+00:00","impact":"High"},
