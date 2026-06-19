@@ -1,7 +1,9 @@
 import json
 import math
+import tempfile
 import unittest
 from datetime import datetime, timezone
+from pathlib import Path
 from unittest.mock import patch
 
 import telegram_signal
@@ -56,22 +58,42 @@ class TelegramSignalTests(unittest.TestCase):
         self.assertGreater(aligned["score_breakdown"]["上位足・時間足整合性"][0],
                            counter["score_breakdown"]["上位足・時間足整合性"][0])
 
-    def test_message_contains_required_environment_sections(self):
+    def test_normal_message_is_short(self):
         items=analyses((1,1,-1)); summary=summary_for(items)
-        message=telegram_signal.telegram_message(summary,items,{"danger":[],"upcoming":[],"error":None})
-        for text in ("現在価格","エントリー条件","利確候補","損切り","根拠","警戒",
-                     "15m","5m CHOCH","FVG","ローソク足確定","反発確認待ち","注目価格"):
+        message=telegram_signal.normal_message(summary,items)
+        for text in ("価格","1h","5m","注目価格","TP","SL"):
             self.assertIn(text,message)
-        self.assertNotIn("スコア内訳",message)
-        self.assertNotIn("総合評価",message)
-        self.assertLess(len(message),4096)
+        for text in ("FVG","ATR","BOS","CHOCH","EMA","スコア"):
+            self.assertNotIn(text,message)
+        self.assertLess(len(message),500)
 
-    def test_calendar_danger_forces_no_entry_wording(self):
-        items=analyses(); summary=summary_for(items)
-        danger={"danger":[{"currency":"USD","title":"CPI",
-                 "time":datetime(2026,6,19,1,30,tzinfo=timezone.utc)}],"upcoming":[],"error":None}
-        message=telegram_signal.telegram_message(summary,items,danger)
-        self.assertIn("USD CPI",message)
+    def test_strong_message_has_detailed_reasons(self):
+        items=analyses(); summary=summary_for(items); summary["total_score"]=78
+        message=telegram_signal.strong_message(summary,items)
+        for text in ("強ロング候補","78/100","15m","BOS","CHOCH","EMA","FVG",
+                     "エントリー条件","飛び乗り禁止","ローソク足確定待ち"):
+            self.assertIn(text,message)
+
+    def test_notification_thresholds_and_slots(self):
+        summary={"total_score":54,"decision":"LONG"}; calendar={"danger":[]}
+        self.assertIsNone(telegram_signal.choose_notification(summary,calendar,0,now=1000))
+        summary["total_score"]=60
+        self.assertEqual(telegram_signal.choose_notification(summary,calendar,0,now=1000),"normal")
+        self.assertIsNone(telegram_signal.choose_notification(summary,calendar,15,now=1000))
+
+    def test_strong_signal_cooldown_and_direction_change(self):
+        summary={"total_score":75,"decision":"LONG"}; calendar={"danger":[]}
+        with tempfile.TemporaryDirectory() as tmp, patch.object(telegram_signal,"STATE_PATH",Path(tmp)/"state.json"):
+            self.assertEqual(telegram_signal.choose_notification(summary,calendar,15,now=1000),"strong")
+            telegram_signal.write_state({"direction":"LONG","strong_at":1000})
+            self.assertIsNone(telegram_signal.choose_notification(summary,calendar,15,now=1500))
+            summary["decision"]="SHORT"
+            self.assertEqual(telegram_signal.choose_notification(summary,calendar,15,now=1500),"strong")
+
+    def test_calendar_danger_downgrades_to_normal_on_half_hour(self):
+        summary={"total_score":80,"decision":"LONG"}; calendar={"danger":[{"title":"CPI"}]}
+        self.assertEqual(telegram_signal.choose_notification(summary,calendar,30,now=1000),"normal")
+        self.assertIsNone(telegram_signal.choose_notification(summary,calendar,15,now=1000))
 
     def test_high_impact_calendar_window(self):
         payload=[{"title":"CPI","country":"USD","date":"2026-06-19T01:30:00+00:00","impact":"High"},

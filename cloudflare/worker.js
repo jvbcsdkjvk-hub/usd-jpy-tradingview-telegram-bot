@@ -1,6 +1,7 @@
 export default {
   async scheduled(controller, env, ctx) {
-    ctx.waitUntil(dispatchWorkflow(env, `cron:${controller.cron}`));
+    const slot = new Date(controller.scheduledTime).getUTCMinutes();
+    ctx.waitUntil(dispatchWorkflow(env, `cron:${controller.cron}`, slot));
   },
 
   async fetch(request, env) {
@@ -12,7 +13,7 @@ export default {
   },
 };
 
-async function dispatchWorkflow(env, source) {
+async function dispatchWorkflow(env, source, slot) {
   const endpoint = `https://api.github.com/repos/${env.GITHUB_OWNER}/${env.GITHUB_REPO}/actions/workflows/${env.GITHUB_WORKFLOW}/dispatches`;
   const response = await fetch(endpoint, {
     method: "POST",
@@ -23,7 +24,7 @@ async function dispatchWorkflow(env, source) {
       "User-Agent": "usd-jpy-cloudflare-scheduler",
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ ref: "main", inputs: { source } }),
+    body: JSON.stringify({ ref: "main", inputs: { source, slot: String(slot), mode: "auto" } }),
   });
   if (!response.ok) {
     const body = await response.text();

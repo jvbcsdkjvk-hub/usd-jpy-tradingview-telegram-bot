@@ -4,6 +4,7 @@ from __future__ import annotations
 import html
 import json
 import os
+import time
 import urllib.parse
 import urllib.request
 from datetime import timedelta, timezone
@@ -16,6 +17,7 @@ from bot.tradingview import fetch_candles
 
 ROOT = Path(__file__).resolve().parent
 JST = timezone(timedelta(hours=9))
+STATE_PATH = ROOT / ".bot-state.json"
 
 
 def load_config():
@@ -167,49 +169,83 @@ def _event_lines(calendar):
     return lines
 
 
-def telegram_message(summary, analyses, calendar=None):
-    calendar = calendar or {"danger": [], "upcoming": [], "error": None}
+def _outlook(summary, analyses):
+    direction = summary["decision"]
+    h1, m5 = analyses["1h"], analyses["5m"]
+    if _match(h1, direction) and not _match(m5, direction):
+        return "押し目待ち" if direction == "LONG" else "戻り待ち"
+    return "買い寄り" if direction == "LONG" else "売り寄り"
+
+
+def normal_message(summary, analyses, calendar=None):
+    direction = summary["decision"]; plan = summary["trade_plan"]
+    h1, m5 = analyses["1h"], analyses["5m"]
+    icon = "🟢" if direction == "LONG" else "🔴"
+    arrow = "↑" if direction == "LONG" else "↓"
+    invalid_arrow = "↓" if direction == "LONG" else "↑"
+    return (
+        f"{icon} <b>USD/JPY {_outlook(summary, analyses)}</b>\n\n"
+        f"価格：<code>{summary['entry_price']:.3f}</code>\n\n"
+        f"1h：{_bias(h1)}\n"
+        f"5m：{_bias(m5)}\n\n"
+        f"<b>注目価格</b>\n"
+        f"{arrow}<code>{plan['trigger']:.3f}</code>で{'買い' if direction == 'LONG' else '売り'}候補\n"
+        f"{invalid_arrow}<code>{plan['invalidation']:.3f}</code>で無効\n\n"
+        f"TP：<code>{summary['take_profit_price']:.3f}</code>\n"
+        f"SL：<code>{summary['stop_price']:.3f}</code>\n"
+    )
+
+
+def strong_message(summary, analyses, calendar=None):
     direction = summary["decision"]; plan = summary["trade_plan"]
     h1, m15, m5 = analyses["1h"], analyses["15m"], analyses["5m"]
-    icon = "🟢" if direction == "LONG" else "🔴"
-    if _match(h1, direction) and not _match(m5, direction):
-        outlook = "押し目待ち" if direction == "LONG" else "戻り待ち"
-    else:
-        outlook = "買い寄り" if direction == "LONG" else "売り寄り"
+    side = "ロング" if direction == "LONG" else "ショート"
     bos_key = "bull_bos" if direction == "LONG" else "bear_bos"
     choch_key = "bull_choch" if direction == "LONG" else "bear_choch"
     fvg = m5.metrics["bull_fvg" if direction == "LONG" else "bear_fvg"]
-    event_lines = _event_lines(calendar)
-    action_warning = "FVG反発確認待ち。" if plan["fvg_wait"] else "反発確認待ち。"
-    event_warning = (" / ".join(event_lines) + " / 新規エントリー見送り") if event_lines else "該当時間帯なし"
-    if calendar.get("error"): event_warning = "経済指標カレンダー取得失敗。手動確認必須"
-    ema_state = "順配列" if summary["score_breakdown"]["EMA"][0] >= 12 else "配列・傾きは弱い"
+    ema_ok = summary["score_breakdown"]["EMA"][0] >= 12
+    event_lines = _event_lines(calendar or {"danger": []})
+    event_warning = (" / ".join(event_lines) + "のため新規見送り") if event_lines else ""
     return (
-        f"{icon} <b>USD/JPY 短期目線：{outlook}</b>\n\n"
-        f"<b>現在価格：</b><code>{summary['entry_price']:.3f}</code>\n\n"
-        f"<b>エントリー条件：</b>\n"
-        f"・条件A：5m {'高値' if direction == 'LONG' else '安値'} <code>{plan['trigger']:.3f}</code> {'上' if direction == 'LONG' else '下'}抜けをローソク足確定で確認\n"
-        f"・条件B：{plan['pullback']}\n"
-        f"・共通：{action_warning}損切り位置確認必須\n\n"
-        f"<b>利確候補：</b><code>{summary['take_profit_price']:.3f}</code>（RR 1:2）\n"
-        f"<b>損切り：</b><code>{summary['stop_price']:.3f}</code>（5m ATR×1.5）\n\n"
-        f"<b>根拠：</b>\n"
-        f"・1h：{_bias(h1)} / {html.escape(h1.metrics['dow_label'])}\n"
-        f"・15m：{_bias(m15)} / {html.escape(m15.metrics['dow_label'])}\n"
-        f"・5m：{_bias(m5)} / {html.escape(m5.metrics['dow_label'])}\n"
-        f"・EMA：{ema_state}\n"
-        f"・5m CHOCH：{'発生' if m5.metrics[choch_key] else '未発生'} / BOS：{'発生' if m5.metrics[bos_key] else '未発生'}\n"
+        f"🔥 <b>USD/JPY 強{side}候補</b>\n\n"
+        f"スコア：<b>{summary['total_score']}/100</b>\n\n"
+        f"<b>根拠</b>\n"
+        f"・1h {_bias(h1)}\n・15m {_bias(m15)}\n・5m {_bias(m5)}\n"
+        f"・BOS：{'発生' if m5.metrics[bos_key] or h1.metrics[bos_key] else '未発生'}\n"
+        f"・CHOCH：{'発生' if m5.metrics[choch_key] else '未発生'}\n"
+        f"・EMA：{'順行' if ema_ok else '未整合'}\n"
         f"・FVG：{fvg_text(fvg)}\n\n"
-        f"<b>警戒：</b>\n"
-        f"・5mが逆方向なら飛び乗り注意\n"
-        f"・直近{'安値' if direction == 'LONG' else '高値'} <code>{plan['invalidation']:.3f}</code> {'割れ' if direction == 'LONG' else '超え'}で見送り\n"
-        f"・{plan['resistance_note']}\n"
-        f"・重要指標：{event_warning}\n\n"
-        f"<b>注目価格：</b>\n"
-        f"・{'上' if direction == 'LONG' else '下'}抜けで伸びそう：<code>{plan['trigger']:.3f}</code>\n"
-        f"・割れたら見送り：<code>{plan['invalidation']:.3f}</code>\n"
-        f"・押し戻り候補：EMA20 <code>{m5.metrics['ema20']:.3f}</code>〜EMA75 <code>{m5.metrics['ema75']:.3f}</code>\n"
+        f"<b>エントリー条件</b>\n"
+        f"<code>{plan['trigger']:.3f}</code>{'上' if direction == 'LONG' else '下'}抜け確定後\n\n"
+        f"TP：<code>{summary['take_profit_price']:.3f}</code>\n"
+        f"SL：<code>{summary['stop_price']:.3f}</code>\n\n"
+        f"<b>注意</b>\n飛び乗り禁止\nローソク足確定待ち\n"
+        + (f"{event_warning}\n" if event_warning else "")
     )
+
+
+def read_state():
+    try: return json.loads(STATE_PATH.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError): return {"direction": None, "strong_at": 0}
+
+
+def write_state(state):
+    STATE_PATH.write_text(json.dumps(state), encoding="utf-8")
+
+
+def choose_notification(summary, calendar, slot, now=None, forced="auto"):
+    now = int(now or time.time())
+    score = summary["total_score"]
+    if forced in ("normal", "strong"): return forced
+    if score < 55: return None
+    if calendar.get("danger"):
+        return "normal" if slot in (0, 30) else None
+    if score < 70:
+        return "normal" if slot in (0, 30) else None
+    state = read_state()
+    if state.get("direction") == summary["decision"] and now - int(state.get("strong_at", 0)) < 30 * 60:
+        return None
+    return "strong"
 
 
 def send_telegram(token, chat_id, message):
@@ -227,9 +263,20 @@ def main():
     config = load_config()
     summary, analyses = analyze(config)
     calendar = safe_fetch_calendar(config["economic_calendar"])
-    print(json.dumps({"summary": summary, "calendar_error": calendar["error"]}, ensure_ascii=False, default=str))
-    send_telegram(token, chat_id, telegram_message(summary, analyses, calendar))
-    print("15-minute environment report sent")
+    try: slot = int(os.environ.get("NOTIFICATION_SLOT", "0"))
+    except ValueError: slot = 0
+    forced = os.environ.get("NOTIFICATION_MODE", "auto").strip().lower()
+    mode = choose_notification(summary, calendar, slot, forced=forced)
+    write_state(read_state())  # Ensure the Actions cache always has a file to save.
+    if mode == "normal":
+        send_telegram(token, chat_id, normal_message(summary, analyses, calendar))
+        print("Normal environment notification sent")
+    elif mode == "strong":
+        send_telegram(token, chat_id, strong_message(summary, analyses, calendar))
+        write_state({"direction": summary["decision"], "strong_at": int(time.time())})
+        print("Strong signal notification sent")
+    else:
+        print(f"No notification: score={summary['total_score']} slot={slot}")
 
 
 if __name__ == "__main__": main()
